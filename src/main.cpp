@@ -13,7 +13,7 @@ const auto D_BLE_CHARACTERISTIC_UUID = "d21408ba-c9bb-e952-4762-3168a403b42e";
 const auto D_LCD_IMAGE_PATH = "/image.png";
 const auto D_LCD_IMAGE_SIZE = 8192;
 const auto D_HRS_INPUT_PIN = 1;
-const auto D_HRS_TIMER_SIZE = 4;
+const auto D_HRS_TIMER_SIZE = 5;
 
 
 // グローバル変数
@@ -31,13 +31,13 @@ int gHrsCounter = 0;
 unsigned long gHrsTimer[D_HRS_TIMER_SIZE] = {};
 
 
-/** ディスプレイのタスク */
-void taskLcd(void* pvParameters) {
+/** ディスプレイの更新 */
+void updateLcd(void* pvParameters) {
   while (true) {
     if (gHrsIsPulsing != gLcdWasPulsing) {
       auto imageX = gHrsIsPulsing ? 0 : -2;
       auto imageY = gHrsIsPulsing ? 0 : 2;
-      auto connText = gBleIsConnecting ? String("~") : String("-");
+      auto connText = gBleIsConnecting ? String("B") : String("-");
       auto rateText = gHrsRate ? String(gHrsRate) : String("-");
       gLcdCanvas.createSprite(128, 128);
       gLcdCanvas.fillScreen(uint32_t(0x7ECDF6));
@@ -47,7 +47,7 @@ void taskLcd(void* pvParameters) {
       gLcdCanvas.drawRightString(rateText, 126, 4);
       gLcdCanvas.drawPng(gLcdImage, D_LCD_IMAGE_SIZE, imageX, imageY);
       gLcdCanvas.pushSprite(0, 0);
-      Serial.printf("Lcd canvas pushed.\n");
+      Serial.printf("LCD canvas pushed.\n");
     }
     gLcdWasPulsing = gHrsIsPulsing;
     gHrsIsPulsing = false;
@@ -70,24 +70,24 @@ class CBleServerCallbacks: public BLEServerCallbacks {
 };
 
 
-/** Bluetoothの通知を送信 */
-void notifyBle(int rate) {
+/** Bluetoothの送信 */
+void sendBle(int rate) {
   if (gBleIsConnecting) {
-    auto message = String("->") + String(rate);
+    auto message = String("<- ") + String(rate);
     gBleCharacteristic->setValue(message.c_str());
     gBleCharacteristic->notify();
-    Serial.printf("BLE message notified. %s\n", message);
+    Serial.printf("BLE message sent. %s\n", message);
   }
 }
 
 
-/** 心拍数センサーの割り込み */
-void interruptHrs() {
+/** 心拍数センサーの更新 */
+void updateHrs() {
   auto currentTime = millis();
   auto prevTime = gHrsTimer[gHrsCounter];
   if (prevTime > 0) {
     auto rate = int((60 * 1000 * D_HRS_TIMER_SIZE) / (currentTime - prevTime));
-    notifyBle(rate);
+    sendBle(rate);
     gHrsRate = rate;
     Serial.printf("HRS rate calculated. %d\n", rate);
   }
@@ -97,18 +97,18 @@ void interruptHrs() {
 }
 
 
-/** ディスプレイの初期設定 */
+/** ディスプレイの設定 */
 void beginLcd() {
   auto file = SPIFFS.open(D_LCD_IMAGE_PATH);
   file.read(gLcdImage, D_LCD_IMAGE_SIZE);
   file.close();
   M5.Lcd.setBrightness(64);
-  xTaskCreatePinnedToCore(taskLcd, "taskLcd", 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
+  xTaskCreatePinnedToCore(updateLcd, "updateLcd", 4096, NULL, 1, NULL, ARDUINO_RUNNING_CORE);
   Serial.printf("LCD initialized.\n");
 }
 
 
-/** Bluetoothの初期設定 */
+/** Bluetoothの設定 */
 void beginBle() {
   BLEDevice::init(D_BLE_DEVICE_NAME);
   auto server = BLEDevice::createServer();
@@ -122,9 +122,9 @@ void beginBle() {
 }
 
 
-/** 心拍数センサーの初期設定 */
+/** 心拍数センサーの設定 */
 void beginHrs() {
-  attachInterrupt(digitalPinToInterrupt(D_HRS_INPUT_PIN), interruptHrs, RISING);
+  attachInterrupt(digitalPinToInterrupt(D_HRS_INPUT_PIN), updateHrs, RISING);
   Serial.printf("HRS initialized.\n");
 }
 
@@ -139,7 +139,7 @@ void setup() {
 }
 
 
-/** Bluetoothの状態更新 */
+/** Bluetoothの更新 */
 void updateBle() {
   if (!gBleIsAdvertising) {
     delay(500);
