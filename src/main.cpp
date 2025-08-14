@@ -92,6 +92,7 @@ void beginSensor() {
 void setup() {
   SPIFFS.begin();
   M5.begin();
+  Serial.begin(115200);
   beginDisplay();
   beginSensor();
 }
